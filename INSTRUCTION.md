@@ -6,7 +6,7 @@ This is due **Tuesday 10/29 at 11:59pm**.
 
 ## Summary
 
-In this project, you will use Vulkan to implement a grass simulator and renderer. You will use compute shaders to perform physics calculations on Bezier curves that represent individual grass blades in your application. Since rendering every grass blade on every frame will is fairly inefficient, you will also use compute shaders to cull grass blades that don't contribute to a given frame. The remaining blades will be passed to a graphics pipeline, in which you will write several shaders. You will write a vertex shader to transform Bezier control points, tessellation shaders to dynamically create the grass geometry from the Bezier curves, and a fragment shader to shade the grass blades.
+In this project, you will use Vulkan to implement a grass simulator and renderer. You will use compute shaders to perform physics calculations on Bezier curves that represent individual grass blades in your application. Since rendering every grass blade on every frame is fairly inefficient, you will also use compute shaders to cull grass blades that don't contribute to a given frame. The remaining blades will be passed to a graphics pipeline, in which you will write several shaders. You will write a vertex shader to transform Bezier control points, tessellation shaders to dynamically create the grass geometry from the Bezier curves, and a fragment shader to shade the grass blades.
 
 The base code provided includes all of the basic Vulkan setup, including a compute pipeline that will run your compute shaders and two graphics pipelines, one for rendering the geometry that grass will be placed on and the other for rendering the grass itself. Your job will be to write the shaders for the grass graphics pipeline and the compute pipeline, as well as binding any resources (descriptors) you may need to accomplish the tasks described in this assignment.
 
@@ -53,7 +53,7 @@ You need to implement the following features/pipeline stages:
 
 * Compute shader (`shaders/compute.comp`)
 * Grass pipeline stages
-  * Vertex shader (`shaders/grass.vert')
+  * Vertex shader (`shaders/grass.vert`)
   * Tessellation control shader (`shaders/grass.tesc`)
   * Tessellation evaluation shader (`shaders/grass.tese`)
   * Fragment shader (`shaders/grass.frag`)
@@ -171,7 +171,7 @@ You are free to define two parameters here.
 
 Define a function such that the grass blades in the bucket closest to the camera are kept while an increasing number of grass blades are culled with each farther bucket.
 
-#### Occlusion culling (extra credit)
+#### **Extra Credit**: Occlusion culling
 
 This type of culling only makes sense if our scene has additional objects aside from the plane and the grass blades. We want to cull grass blades that are occluded by other geometry. Think about how you can use a depth map to accomplish this!
 
@@ -183,7 +183,7 @@ In the tessellation control shader, specify the amount of tessellation you want 
 
 The generated vertices will be passed to the tessellation evaluation shader, where you will place the vertices in world space, respecting the width, height, and orientation information of each blade. Once you have determined the world space position of each vector, make sure to set the output `gl_Position` in clip space!
 
-** Extra Credit**: Tessellate to varying levels of detail as a function of how far the grass blade is from the camera. For example, if the blade is very far, only generate four vertices in the tessellation control shader.
+**Extra Credit**: Tessellate to varying levels of detail as a function of how far the grass blade is from the camera. For example, if the blade is very far, only generate four vertices in the tessellation control shader.
 
 To build more intuition on how tessellation works, I highly recommend playing with the [helloTessellation sample](https://github.com/CIS565-Fall-2017/Vulkan-Samples/tree/master/samples/5_helloTessellation) and reading this [tutorial on tessellation](https://ogldev.org/www/tutorial30/tutorial30.html).
 

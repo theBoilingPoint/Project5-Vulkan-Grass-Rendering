@@ -3,10 +3,18 @@ Vulkan Grass Rendering
 
 **University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 5**
 
-* (TODO) YOUR NAME HERE
-* Tested on: (TODO) Windows 22, i7-2222 @ 2.22GHz 22GB, GTX 222 222MB (Moore 2222 Lab)
+* Xinran Tao
+* Tested on: Windows 11 Enterprise, AMD Ryzen 7 7800X3D 8 Core Processor @ 4.201GHz, RTX 2080Ti (Personal PC)
 
-### (TODO: Your README)
-
-*DO NOT* leave the README to the last minute! It is a crucial part of the
-project, and we will not be able to grade you without a good README.
+# TODO List
+- [x] Representing Grass as Bezier Curves
+- [ ] Simulating Forces
+  - [ ] Gravity
+  - [ ] Recovery
+  - [ ] Wind
+  - [ ] Total
+- [ ] Culling Tests
+  - [ ] Orientation
+  - [ ] View-frustum
+  - [ ] Distance
+- [ ] Tessellation

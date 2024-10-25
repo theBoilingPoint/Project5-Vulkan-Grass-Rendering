@@ -21,11 +21,6 @@ struct Blade {
     vec4 up;
 };
 
-// TODO: Add bindings to:
-// 1. Store the input blades
-// 2. Write out the culled blades
-// 3. Write the total number of blades remaining
-
 // The project is using vkCmdDrawIndirect to use a buffer as the arguments for a draw call
 // This is sort of an advanced feature so we've showed you what this buffer should look like
 //
@@ -36,6 +31,25 @@ struct Blade {
 // 	  uint firstInstance; // = 0
 // } numBlades;
 
+// TODO: Add bindings to:
+// 1. Store the input blades
+layout(set = 2, binding = 0) buffer InputBlades {
+    Blade blades[];
+} inputBlades;
+
+// 2. Write out the culled blades
+layout(set = 2, binding = 1) buffer CulledBlades {
+    Blade blades[];
+} outputBlades;
+
+// 3. Write the total number of blades remaining
+layout(set = 2, binding = 2) buffer NumBlades {
+    uint vertexCount;   // Write the number of blades remaining here
+    uint instanceCount; // = 1
+    uint firstVertex;   // = 0
+    uint firstInstance; // = 0
+} numBlades;
+
 bool inBounds(float value, float bounds) {
     return (value >= -bounds) && (value <= bounds);
 }
@@ -43,14 +57,71 @@ bool inBounds(float value, float bounds) {
 void main() {
 	// Reset the number of blades to 0
 	if (gl_GlobalInvocationID.x == 0) {
-		// numBlades.vertexCount = 0;
+		numBlades.vertexCount = 0;
 	}
 	barrier(); // Wait till all threads reach this point
 
+    uint bladeIdx = gl_GlobalInvocationID.x;
+    Blade curBlade = inputBlades.blades[bladeIdx];
+    vec3 v0 = curBlade.v0.xyz;
+    vec3 v1 = curBlade.v1.xyz;
+    vec3 v2 = curBlade.v2.xyz;
+    vec3 up = curBlade.up.xyz;
+    float orientation = curBlade.v0.w;
+    float height = curBlade.v1.w;
+    float width = curBlade.v2.w;
+    float stiffness = curBlade.up.w;
+
     // TODO: Apply forces on every blade and update the vertices in the buffer
+
 
 	// TODO: Cull blades that are too far away or not in the camera frustum and write them
 	// to the culled blades buffer
 	// Note: to do this, you will need to use an atomic operation to read and update numBlades.vertexCount
 	// You want to write the visible blades to the buffer without write conflicts between threads
-}
+    
+    // Orientation Culling 
+    vec4 side_vec = vec4(vec3(cos(orientation), 0.0, sin(orientation)), 0.0);
+    vec3 dir_b = normalize((camera.view * side_vec).xyz);
+    vec3 dir_c = normalize((camera.view * vec4(v0, 1.0)).xyz);
+    bool culled = abs(dot(dir_b, dir_c)) > 0.9f? true : false;
+
+    // View Frustum Culling
+    mat4 viewProj = camera.proj * camera.view;
+    vec3 m = 0.25 * v0 + 0.5 * v1 + 0.25 * v2;
+    vec4 v0_clip = (viewProj * vec4(v0, 1.0));
+    vec4 v2_clip = (viewProj * vec4(v2, 1.0));
+    vec4 m_clip = (viewProj * vec4(m, 1.0));
+    float t = 0.01; 
+    float v0_tolerance = v0_clip.w + t;
+    float v2_tolerance = v2_clip.w + t;
+    float m_tolerance = m_clip.w + t;
+    bool in_frustum = inBounds(v0_clip.x, v0_tolerance) && inBounds(v0_clip.y, v0_tolerance) && inBounds(v0_clip.z, v0_tolerance) ||
+                     inBounds(v2_clip.x, v2_tolerance) && inBounds(v2_clip.y, v2_tolerance) && inBounds(v2_clip.z, v2_tolerance) ||
+                     inBounds(m_clip.x, m_tolerance) && inBounds(m_clip.y, m_tolerance) && inBounds(m_clip.z, m_tolerance);
+    culled = culled || !in_frustum;
+
+    // Distance Culling
+    const float d_max = 30.0f; // default 50?
+    const int n = 10;
+
+    // Extract the rotation part (upper 3x3 matrix)
+    mat3 rotationMatrix = mat3(camera.view);
+    // Extract the translation part (the last row of the view matrix)
+    vec3 translation = vec3(camera.view[3][0], camera.view[3][1], camera.view[3][2]);
+    // Calculate the camera position by undoing the rotation and translation
+    vec3 c = -transpose(rotationMatrix) * translation;
+    vec3 camera_to_blade = v0 - c;
+    vec3 projected_up = dot(camera_to_blade, up) * up;
+    float d_proj = length(camera_to_blade - projected_up);
+    d_proj = clamp(d_proj, 0.0f, d_max);
+    // bool is_too_far = bladeIdx % n < floor(n * (1.0f - d_proj / d_max));
+    bool is_too_far = bladeIdx % n > floor(n * (1.0f - d_proj / d_max));
+    culled = culled || is_too_far;
+    
+    // Write to the output buffer
+    if (!culled) {
+        uint idx = atomicAdd(numBlades.vertexCount, 1);
+        outputBlades.blades[idx] = curBlade;
+    }
+}   
