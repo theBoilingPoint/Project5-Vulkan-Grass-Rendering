@@ -72,6 +72,12 @@ Instance::Instance(const char* applicationName, unsigned int additionalExtension
         createInfo.enabledLayerCount = 0;
     }
 
+    /** Note that I didn't check if this layer exists! **/
+    // const char* instance_layers[] = { "VK_LAYER_LUNARG_monitor" };
+    // createInfo.enabledLayerCount = 1;
+    // createInfo.ppEnabledLayerNames = instance_layers;
+    /*******************************************************/
+
     // Create instance
     if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create instance");
