@@ -1,4 +1,7 @@
 #include <vulkan/vulkan.h>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 #include "Instance.h"
 #include "Window.h"
 #include "Renderer.h"
@@ -171,10 +174,42 @@ int main() {
     glfwSetMouseButtonCallback(GetGLFWWindow(), mouseDownCallback);
     glfwSetCursorPosCallback(GetGLFWWindow(), mouseMoveCallback);
 
+    // Frametime tracking
+    auto lastTime = std::chrono::high_resolution_clock::now();
+    auto frameTimeUpdate = lastTime;
+    float averageFrametime = 16.67f; // Initialize with 60 FPS
+    const float updateInterval = 0.25f; // Update every 0.25 seconds for smoother display
+    std::string currentTitle = "Vulkan Grass Rendering - FPS: 60.0 | Frametime: 16.67 ms";
+
     while (!ShouldQuit()) {
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        auto frameDuration = std::chrono::duration<float, std::milli>(currentTime - lastTime);
+        float frametimeMs = frameDuration.count();
+        lastTime = currentTime;
+
         glfwPollEvents();
         scene->UpdateTime();
         renderer->Frame();
+
+        // Update window title with FPS and frametime at regular intervals
+        auto timeSinceUpdate = std::chrono::duration<float>(currentTime - frameTimeUpdate).count();
+        if (timeSinceUpdate >= updateInterval) {
+            // Use exponential moving average for smoother frametime display
+            averageFrametime = averageFrametime * 0.7f + frametimeMs * 0.3f;
+            float fps = 1000.0f / averageFrametime;
+            
+            // Always build the complete title string
+            std::stringstream title;
+            title << "Vulkan Grass Rendering - FPS: " << std::fixed << std::setprecision(1) << fps 
+                  << " | Frametime: " << std::setprecision(2) << averageFrametime << " ms";
+            currentTitle = title.str();
+            glfwSetWindowTitle(GetGLFWWindow(), currentTitle.c_str());
+            
+            frameTimeUpdate = currentTime;
+        } else {
+            // Ensure title is always set, even between updates
+            glfwSetWindowTitle(GetGLFWWindow(), currentTitle.c_str());
+        }
     }
 
     vkDeviceWaitIdle(device->GetVkDevice());

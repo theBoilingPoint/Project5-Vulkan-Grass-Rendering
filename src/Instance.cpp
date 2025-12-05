@@ -1,6 +1,12 @@
 #include <stdexcept>
 #include <set>
 #include <vector>
+#include <cstring>
+#include <cstdio>
+#include <cstdlib>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include "Instance.h"
 
 #ifdef NDEBUG
@@ -13,6 +19,27 @@ namespace {
     const std::vector<const char*> validationLayers = {
         "VK_LAYER_KHRONOS_validation"
     };
+    
+    // Monitor layer for displaying frametime/FPS on window
+    const std::vector<const char*> monitorLayers = {
+        "VK_LAYER_LUNARG_monitor"
+    };
+
+    // Check if a layer is available at instance level
+    bool checkLayerSupport(const char* layerName) {
+        uint32_t layerCount;
+        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+        std::vector<VkLayerProperties> availableLayers(layerCount);
+        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+        for (const auto& layerProperties : availableLayers) {
+            if (strcmp(layerName, layerProperties.layerName) == 0) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     // Get the required list of extensions based on whether validation layers are enabled
     std::vector<const char*> getRequiredExtensions() {
@@ -42,6 +69,18 @@ namespace {
 }
 
 Instance::Instance(const char* applicationName, unsigned int additionalExtensionCount, const char** additionalExtensions) {
+    // Configure monitor layer to display frametime in addition to FPS
+    // Set environment variables before creating instance
+    #ifdef _WIN32
+    // Windows: Set environment variable for current process
+    SetEnvironmentVariableA("VK_LAYER_LUNARG_MONITOR_LAYER_DISPLAY_FRAMETIME", "1");
+    SetEnvironmentVariableA("VK_LAYER_LUNARG_MONITOR_LAYER_DISPLAY_FPS", "1");
+    #else
+    // Linux/Unix: Set environment variable
+    setenv("VK_LAYER_LUNARG_MONITOR_LAYER_DISPLAY_FRAMETIME", "1", 0);
+    setenv("VK_LAYER_LUNARG_MONITOR_LAYER_DISPLAY_FPS", "1", 0);
+    #endif
+    
     // --- Specify details about our application ---
     VkApplicationInfo appInfo = {};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -65,18 +104,25 @@ Instance::Instance(const char* applicationName, unsigned int additionalExtension
     createInfo.ppEnabledExtensionNames = extensions.data();
 
     // Specify global validation layers
+    // Combine validation layers and monitor layer (if available) if validation is enabled
+    enabledLayers.clear();
     if (ENABLE_VALIDATION) {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
+        enabledLayers.insert(enabledLayers.end(), validationLayers.begin(), validationLayers.end());
+        // Add monitor layer to display frametime/FPS on window (if available)
+        for (const char* monitorLayer : monitorLayers) {
+            if (checkLayerSupport(monitorLayer)) {
+                enabledLayers.push_back(monitorLayer);
+                fprintf(stderr, "Monitor layer enabled: %s\n", monitorLayer);
+            } else {
+                fprintf(stderr, "Monitor layer not available: %s (frametime overlay will not be displayed)\n", monitorLayer);
+            }
+        }
+        
+        createInfo.enabledLayerCount = static_cast<uint32_t>(enabledLayers.size());
+        createInfo.ppEnabledLayerNames = enabledLayers.data();
     } else {
         createInfo.enabledLayerCount = 0;
     }
-
-    /** Note that I didn't check if this layer exists! **/
-    // const char* instance_layers[] = { "VK_LAYER_LUNARG_monitor" };
-    // createInfo.enabledLayerCount = 1;
-    // createInfo.ppEnabledLayerNames = instance_layers;
-    /*******************************************************/
 
     // Create instance
     if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
@@ -343,12 +389,12 @@ Device* Instance::CreateDevice(QueueFlagBits requiredQueues, VkPhysicalDeviceFea
     createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
-    if (ENABLE_VALIDATION) {
-        createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-    } else {
-        createInfo.enabledLayerCount = 0;
-    }
+    // Note: Device layers are deprecated in Vulkan 1.1+
+    // Layers should only be enabled at instance level, not device level
+    // All layers (including validation and monitor) are automatically applied to devices
+    // when enabled at instance level, so we don't need to enable them here
+    createInfo.enabledLayerCount = 0;
+    createInfo.ppEnabledLayerNames = nullptr;
 
     VkDevice vkDevice;
     // Create logical device

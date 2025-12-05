@@ -37,6 +37,7 @@ private:
     VkInstance instance;
     VkDebugReportCallbackEXT debugReportCallback;
     std::vector<const char*> deviceExtensions;
+    std::vector<const char*> enabledLayers;  // Store enabled layers for reuse in device creation
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     QueueFamilyIndices queueFamilyIndices;
     VkSurfaceCapabilitiesKHR surfaceCapabilities;
