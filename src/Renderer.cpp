@@ -506,24 +506,13 @@ void Renderer::CreateGraphicsPipeline() {
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     // Viewports and Scissors (rectangles that define in which regions pixels are stored)
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swapChain->GetVkExtent().width);
-    viewport.height = static_cast<float>(swapChain->GetVkExtent().height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    VkRect2D scissor = {};
-    scissor.offset = { 0, 0 };
-    scissor.extent = swapChain->GetVkExtent();
-
+    // Note: Using dynamic viewport/scissor, so we don't set actual values here
     VkPipelineViewportStateCreateInfo viewportState = {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
+    viewportState.pViewports = nullptr;  // Dynamic
     viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
+    viewportState.pScissors = nullptr;  // Dynamic
 
     // Rasterizer
     VkPipelineRasterizationStateCreateInfo rasterizer = {};
@@ -598,6 +587,17 @@ void Renderer::CreateGraphicsPipeline() {
         throw std::runtime_error("Failed to create pipeline layout");
     }
 
+    // Dynamic state
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState = {};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
     // --- Create graphics pipeline ---
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -610,7 +610,7 @@ void Renderer::CreateGraphicsPipeline() {
     pipelineInfo.pMultisampleState = &multisampling;
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDynamicState = nullptr;
+    pipelineInfo.pDynamicState = &dynamicState;  // Add this line
     pipelineInfo.layout = graphicsPipelineLayout;
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
@@ -680,24 +680,13 @@ void Renderer::CreateGrassPipeline() {
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
     // Viewports and Scissors (rectangles that define in which regions pixels are stored)
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swapChain->GetVkExtent().width);
-    viewport.height = static_cast<float>(swapChain->GetVkExtent().height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-
-    VkRect2D scissor = {};
-    scissor.offset = { 0, 0 };
-    scissor.extent = swapChain->GetVkExtent();
-
+    // Note: Using dynamic viewport/scissor, so we don't set actual values here
     VkPipelineViewportStateCreateInfo viewportState = {};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
+    viewportState.pViewports = nullptr;  // Dynamic
     viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
+    viewportState.pScissors = nullptr;  // Dynamic
 
     // Rasterizer
     VkPipelineRasterizationStateCreateInfo rasterizer = {};
@@ -779,6 +768,17 @@ void Renderer::CreateGrassPipeline() {
     tessellationInfo.flags = 0;
     tessellationInfo.patchControlPoints = 1;
 
+    // Dynamic state
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamicState = {};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
     // --- Create graphics pipeline ---
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -792,7 +792,7 @@ void Renderer::CreateGrassPipeline() {
     pipelineInfo.pDepthStencilState = &depthStencil;
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pTessellationState = &tessellationInfo;
-    pipelineInfo.pDynamicState = nullptr;
+    pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = grassPipelineLayout;
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
@@ -930,24 +930,62 @@ void Renderer::CreateFrameResources() {
 
 void Renderer::DestroyFrameResources() {
     for (size_t i = 0; i < imageViews.size(); i++) {
-        vkDestroyImageView(logicalDevice, imageViews[i], nullptr);
+        if (imageViews[i] != VK_NULL_HANDLE) {
+            vkDestroyImageView(logicalDevice, imageViews[i], nullptr);
+            imageViews[i] = VK_NULL_HANDLE;
+        }
     }
+    imageViews.clear();
 
-    vkDestroyImageView(logicalDevice, depthImageView, nullptr);
-    vkFreeMemory(logicalDevice, depthImageMemory, nullptr);
-    vkDestroyImage(logicalDevice, depthImage, nullptr);
+    if (depthImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(logicalDevice, depthImageView, nullptr);
+        depthImageView = VK_NULL_HANDLE;
+    }
+    if (depthImageMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(logicalDevice, depthImageMemory, nullptr);
+        depthImageMemory = VK_NULL_HANDLE;
+    }
+    if (depthImage != VK_NULL_HANDLE) {
+        vkDestroyImage(logicalDevice, depthImage, nullptr);
+        depthImage = VK_NULL_HANDLE;
+    }
 
     for (size_t i = 0; i < framebuffers.size(); i++) {
-        vkDestroyFramebuffer(logicalDevice, framebuffers[i], nullptr);
+        if (framebuffers[i] != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer(logicalDevice, framebuffers[i], nullptr);
+            framebuffers[i] = VK_NULL_HANDLE;
+        }
     }
+    framebuffers.clear();
 }
 
 void Renderer::RecreateFrameResources() {
-    vkDestroyPipeline(logicalDevice, graphicsPipeline, nullptr);
-    vkDestroyPipeline(logicalDevice, grassPipeline, nullptr);
-    vkDestroyPipelineLayout(logicalDevice, graphicsPipelineLayout, nullptr);
-    vkDestroyPipelineLayout(logicalDevice, grassPipelineLayout, nullptr);
-    vkFreeCommandBuffers(logicalDevice, graphicsCommandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+    // Wait for all operations to complete before recreating
+    vkDeviceWaitIdle(logicalDevice);
+    
+    // Destroy pipelines (safe to call with VK_NULL_HANDLE)
+    if (graphicsPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(logicalDevice, graphicsPipeline, nullptr);
+        graphicsPipeline = VK_NULL_HANDLE;
+    }
+    if (grassPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(logicalDevice, grassPipeline, nullptr);
+        grassPipeline = VK_NULL_HANDLE;
+    }
+    if (graphicsPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(logicalDevice, graphicsPipelineLayout, nullptr);
+        graphicsPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (grassPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(logicalDevice, grassPipelineLayout, nullptr);
+        grassPipelineLayout = VK_NULL_HANDLE;
+    }
+    
+    // Free command buffers if they exist
+    if (!commandBuffers.empty()) {
+        vkFreeCommandBuffers(logicalDevice, graphicsCommandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+        commandBuffers.clear();
+    }
 
     DestroyFrameResources();
     CreateFrameResources();
@@ -1000,7 +1038,18 @@ void Renderer::RecordComputeCommandBuffer() {
 }
 
 void Renderer::RecordCommandBuffers() {
-    commandBuffers.resize(swapChain->GetCount());
+    // Free existing command buffers if any
+    if (!commandBuffers.empty()) {
+        vkFreeCommandBuffers(logicalDevice, graphicsCommandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+        commandBuffers.clear();
+    }
+    
+    uint32_t swapChainImageCount = swapChain->GetCount();
+    if (swapChainImageCount == 0) {
+        throw std::runtime_error("Swap chain has no images");
+    }
+    
+    commandBuffers.resize(swapChainImageCount);
 
     // Specify the command pool and number of buffers to allocate
     VkCommandBufferAllocateInfo allocInfo = {};
@@ -1024,6 +1073,22 @@ void Renderer::RecordCommandBuffers() {
         if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("Failed to begin recording command buffer");
         }
+
+        // Set dynamic viewport and scissor
+        VkViewport viewport = {};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapChain->GetVkExtent().width);
+        viewport.height = static_cast<float>(swapChain->GetVkExtent().height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+
+        VkRect2D scissor = {};
+        scissor.offset = { 0, 0 };
+        scissor.extent = swapChain->GetVkExtent();
+
+        vkCmdSetViewport(commandBuffers[i], 0, 1, &viewport);
+        vkCmdSetScissor(commandBuffers[i], 0, 1, &scissor);
 
         // Begin the render pass
         VkRenderPassBeginInfo renderPassInfo = {};
@@ -1118,6 +1183,13 @@ void Renderer::Frame() {
         return;
     }
 
+    // Ensure we have valid command buffers and the index is valid
+    uint32_t imageIndex = swapChain->GetIndex();
+    if (imageIndex >= commandBuffers.size() || commandBuffers.empty()) {
+        RecreateFrameResources();
+        return;
+    }
+
     // Submit the command buffer
     VkSubmitInfo submitInfo = {};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1129,7 +1201,7 @@ void Renderer::Frame() {
     submitInfo.pWaitDstStageMask = waitStages;
 
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffers[swapChain->GetIndex()];
+    submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
     VkSemaphore signalSemaphores[] = { swapChain->GetRenderFinishedVkSemaphore() };
     submitInfo.signalSemaphoreCount = 1;

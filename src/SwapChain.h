@@ -24,7 +24,7 @@ public:
 
 private:
     SwapChain(Device* device, VkSurfaceKHR vkSurface, unsigned int numBuffers);
-    void Create();
+    void Create(VkSwapchainKHR oldSwapChain = VK_NULL_HANDLE);
     void Destroy();
 
     Device* device;

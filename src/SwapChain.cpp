@@ -45,18 +45,32 @@ namespace {
 
   // Specify the swap extent (resolution) of the swap chain
   VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, GLFWwindow* window) {
+      // If currentExtent is valid (not max and not zero), use it
       if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-          return capabilities.currentExtent;
-      } else {
-          int width, height;
-          glfwGetWindowSize(window, &width, &height);
-          VkExtent2D actualExtent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
+          if (capabilities.currentExtent.width > 0 && capabilities.currentExtent.height > 0) {
+              return capabilities.currentExtent;
+          }
+      }
+      
+      // Fallback: query window size directly
+      int width, height;
+      glfwGetWindowSize(window, &width, &height);
+      
+      // If window size is invalid, we cannot proceed (should have been caught earlier)
+      if (width <= 0 || height <= 0) {
+          // Return zero to indicate failure - caller should check
+          return { 0, 0 };
+      }
+      
+      VkExtent2D actualExtent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
 
+      // Clamp to valid range - but only if the range is valid
+      if (capabilities.maxImageExtent.width > 0 && capabilities.maxImageExtent.height > 0) {
           actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
           actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
-
-          return actualExtent;
       }
+
+      return actualExtent;
   }
 }
 
@@ -74,14 +88,39 @@ SwapChain::SwapChain(Device* device, VkSurfaceKHR vkSurface, unsigned int numBuf
     }
 }
 
-void SwapChain::Create() {
+void SwapChain::Create(VkSwapchainKHR oldSwapChain) {
     auto* instance = device->GetInstance();
 
-    const auto& surfaceCapabilities = instance->GetSurfaceCapabilities();
+    // Refresh surface capabilities to get current window size (they change on resize)
+    VkSurfaceCapabilitiesKHR surfaceCapabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(instance->GetPhysicalDevice(), vkSurface, &surfaceCapabilities);
+
+    // Check if window is minimized - when minimized, all extents are zero
+    // We cannot create a swap chain in this state, so just return early
+    // The old swap chain (if any) will remain in use
+    if (surfaceCapabilities.currentExtent.width == 0 && surfaceCapabilities.currentExtent.height == 0 &&
+        surfaceCapabilities.minImageExtent.width == 0 && surfaceCapabilities.minImageExtent.height == 0 &&
+        surfaceCapabilities.maxImageExtent.width == 0 && surfaceCapabilities.maxImageExtent.height == 0) {
+        // Window is minimized - cannot create swap chain, keep using old one
+        return;
+    }
 
     VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(instance->GetSurfaceFormats());
     VkPresentModeKHR presentMode = chooseSwapPresentMode(instance->GetPresentModes());
     VkExtent2D extent = chooseSwapExtent(surfaceCapabilities, GetGLFWWindow());
+
+    // Validate extent before proceeding - must not be zero and must be within bounds
+    if (extent.width == 0 || extent.height == 0) {
+        throw std::runtime_error("Cannot create swap chain with zero extent");
+    }
+    
+    // Ensure extent is within the valid range
+    if (extent.width < surfaceCapabilities.minImageExtent.width || 
+        extent.width > surfaceCapabilities.maxImageExtent.width ||
+        extent.height < surfaceCapabilities.minImageExtent.height || 
+        extent.height > surfaceCapabilities.maxImageExtent.height) {
+        throw std::runtime_error("Swap chain extent is outside valid bounds (window may be minimized)");
+    }
 
     uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
     imageCount = numBuffers > imageCount ? numBuffers : imageCount;
@@ -135,7 +174,7 @@ void SwapChain::Create() {
     createInfo.clipped = VK_TRUE;
 
     // Reference to old swap chain in case current one becomes invalid
-    createInfo.oldSwapchain = VK_NULL_HANDLE;
+    createInfo.oldSwapchain = oldSwapChain;  // Use the parameter instead of VK_NULL_HANDLE
 
     // Create swap chain
     if (vkCreateSwapchainKHR(device->GetVkDevice(), &createInfo, nullptr, &vkSwapChain) != VK_SUCCESS) {
@@ -144,11 +183,20 @@ void SwapChain::Create() {
 
     // --- Retrieve swap chain images ---
     vkGetSwapchainImagesKHR(device->GetVkDevice(), vkSwapChain, &imageCount, nullptr);
+    vkSwapChainImages.clear();  // Clear old images first
     vkSwapChainImages.resize(imageCount);
     vkGetSwapchainImagesKHR(device->GetVkDevice(), vkSwapChain, &imageCount, vkSwapChainImages.data());
 
     vkSwapChainImageFormat = surfaceFormat.format;
     vkSwapChainExtent = extent;
+    
+    // Reset image index after recreation
+    imageIndex = 0;
+
+    // Destroy old swap chain after creating new one (if it exists)
+    if (oldSwapChain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(device->GetVkDevice(), oldSwapChain, nullptr);
+    }
 }
 
 void SwapChain::Destroy() {
@@ -189,8 +237,10 @@ VkSemaphore SwapChain::GetRenderFinishedVkSemaphore() const {
 }
 
 void SwapChain::Recreate() {
-    Destroy();
-    Create();
+    VkSwapchainKHR oldSwapChain = vkSwapChain;  // Save the old swap chain handle
+    // Don't set vkSwapChain to null - let Create() update it atomically after successful creation
+    // If window is minimized, Create() will return early and we'll keep using the old swap chain
+    Create(oldSwapChain);  // Create will update vkSwapChain and destroy oldSwapChain if successful
 }
 
 bool SwapChain::Acquire() {
@@ -198,20 +248,34 @@ bool SwapChain::Acquire() {
         // the validation layer implementation expects the application to explicitly synchronize with the GPU
         vkQueueWaitIdle(device->GetQueue(QueueFlags::Present));
     }
-    VkResult result = vkAcquireNextImageKHR(device->GetVkDevice(), vkSwapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        throw std::runtime_error("Failed to acquire swap chain image");
+    
+    // Ensure swap chain is valid
+    if (vkSwapChain == VK_NULL_HANDLE) {
+        return false;
     }
-
+    
+    VkResult result = vkAcquireNextImageKHR(device->GetVkDevice(), vkSwapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+    
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        // Wait for all operations to complete before recreating
+        vkDeviceWaitIdle(device->GetVkDevice());
         Recreate();
         return false;
+    }
+    
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        throw std::runtime_error("Failed to acquire swap chain image");
     }
 
     return true;
 }
 
 bool SwapChain::Present() {
+    // Ensure swap chain is valid
+    if (vkSwapChain == VK_NULL_HANDLE) {
+        return false;
+    }
+    
     VkSemaphore signalSemaphores[] = { renderFinishedSemaphore };
 
     // Submit result back to swap chain for presentation
@@ -228,13 +292,15 @@ bool SwapChain::Present() {
 
     VkResult result = vkQueuePresentKHR(device->GetQueue(QueueFlags::Present), &presentInfo);
 
-    if (result != VK_SUCCESS) {
-        throw std::runtime_error("Failed to present swap chain image");
-    }
-
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        // Wait for all operations to complete before recreating
+        vkDeviceWaitIdle(device->GetVkDevice());
         Recreate();
         return false;
+    }
+
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("Failed to present swap chain image");
     }
 
     return true;

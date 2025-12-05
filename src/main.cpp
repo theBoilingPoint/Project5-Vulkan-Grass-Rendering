@@ -16,8 +16,36 @@ namespace {
         if (width == 0 || height == 0) return;
 
         vkDeviceWaitIdle(device->GetVkDevice());
-        swapChain->Recreate();
-        renderer->RecreateFrameResources();
+        
+        float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+        camera->UpdateAspectRatio(aspectRatio);
+        
+        // Check if window is actually valid before proceeding
+        // Sometimes GLFW reports non-zero but surface capabilities return zero
+        int fbWidth, fbHeight;
+        glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+        if (fbWidth == 0 || fbHeight == 0) {
+            // Window is minimized or invalid - skip recreation
+            return;
+        }
+        
+        // Destroy frame resources first (image views and framebuffers that reference old swap chain images)
+        // This must be done BEFORE recreating the swap chain
+        renderer->DestroyFrameResources();
+        
+        // Now recreate the swap chain (old image views are already destroyed, so it's safe)
+        try {
+            swapChain->Recreate();
+            
+            // Recreate all frame resources with the new swap chain
+            // Note: RecreateFrameResources will call DestroyFrameResources again, but it's safe (handles null checks)
+            renderer->RecreateFrameResources();
+        } catch (const std::exception& e) {
+            // If swap chain recreation fails (e.g., window minimized), 
+            // we need to recreate frame resources with the old swap chain
+            // RecreateFrameResources will handle this
+            renderer->RecreateFrameResources();
+        }
     }
 
     bool leftMouseDown = false;
